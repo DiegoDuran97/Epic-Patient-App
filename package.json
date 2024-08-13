@@ -22,6 +22,7 @@
     "vite": "^5.3.4"
   },
   "dependencies": {
+    "@types/fhir": "^0.0.41",
     "axios": "^1.7.3",
     "pkce-challenge": "^4.1.0"
   }
