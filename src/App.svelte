@@ -4,9 +4,15 @@
   import axios from 'axios';
   import pkceChallenge from 'pkce-challenge';
   import PatientDetails from "./lib/PatientDetails.svelte";
+  import MedicationDetails from "./lib/MedicationDetails.svelte";
+  import ObservationViewer from "./lib/ObservationViewer.svelte";
 
-  let tokenResponse: { access_token: string, id_token: string, patient: string, scope: string } | undefined;
+  let tokenResponse: { access_token: string, id_token: string, patient: string, scope: string, expires_in?: number } | undefined;
   let loading = true;
+
+  const getSecs = (date: Date) => {
+    return Math.round((date).getTime() / 1000);
+  };
 
   const generateCodeChallenge = async () => {
     const { code_challenge, code_verifier } = await pkceChallenge();
@@ -34,16 +40,14 @@
     tokenRequestForm.set('redirect_uri', REDIRECT_URL);
     tokenRequestForm.set('client_id', CLIENT_ID);
     tokenRequestForm.set('code_verifier', codeVerifier);
-
+    const tokenGeneratedAt = getSecs(new Date());
     try {
       const response = await axios.post(SMART_TOKEN_URL, tokenRequestForm);
       console.log("Response Data:", response.data);
 
       if (response.data && typeof response.data === 'object') {
         tokenResponse = response.data;
-        sessionStorage.setItem(TOKEN_RESPONSE_SESSION_STORAGE_KEY, JSON.stringify(tokenResponse));
-        console.log("Token saved to sessionStorage:", JSON.stringify(tokenResponse));
-        console.log("SessionStorage Token Response:", sessionStorage.getItem(TOKEN_RESPONSE_SESSION_STORAGE_KEY));
+        sessionStorage.setItem(TOKEN_RESPONSE_SESSION_STORAGE_KEY, JSON.stringify({ ...tokenResponse, issued_at_in_sec: tokenGeneratedAt }));
       } else {
         console.error("Invalid token response format:", response.data);
       }
@@ -57,15 +61,17 @@
     const codeVerifier = sessionStorage.getItem(CODE_VERIFIER_SESSION_STORAGE_KEY);
     const tokenResponseString = sessionStorage.getItem(TOKEN_RESPONSE_SESSION_STORAGE_KEY);
 
-    console.log("Code:", code);
-    console.log("Code Verifier:", codeVerifier);
-    console.log("Token Response String:", tokenResponseString);
-
     if (tokenResponseString) {
       try {
-        console.log("Trying to parse Token Response String:", tokenResponseString);
-        tokenResponse = JSON.parse(tokenResponseString);
-        console.log("Parsed Token Response:", tokenResponse);
+        const tokenResponseTemp = JSON.parse(tokenResponseString);
+        const { issued_at_in_sec, expires_in } = tokenResponseTemp;
+        const expires_in_sec = issued_at_in_sec + expires_in;
+        const now_in_sec = getSecs(new Date());
+        if (now_in_sec >= expires_in_sec) {
+          sessionStorage.removeItem(TOKEN_RESPONSE_SESSION_STORAGE_KEY);
+        } else {
+          tokenResponse = tokenResponseTemp;
+        }
       } catch (e) {
         console.error("JSON parsing error:", e, "Token Response String:", tokenResponseString);
       }
@@ -88,15 +94,20 @@
   };
 </script>
 
-<main>
+<main class="flex flex-col items-center justify-center min-h-screen">
   {#if loading}
-    Loading...
+    <p>Loading...</p>
   {:else}
     {#if tokenResponse}
       <PatientDetails accessToken={tokenResponse.access_token} patientId={tokenResponse.patient} />
+      <MedicationDetails accessToken={tokenResponse.access_token} patientId={tokenResponse.patient}></MedicationDetails>
+      <ObservationViewer accessToken={tokenResponse.access_token} patientId={tokenResponse.patient}></ObservationViewer>
+      <ObservationViewer title="Vital Signs" category='vital-signs' accessToken={tokenResponse.access_token} patientId={tokenResponse.patient}></ObservationViewer>
     {:else}
-      <div class="flex justify-center my-20">
-        <button on:click={initiateAuthorizationRequest} class="p-3 bg-black rounded-md text-white">Sign In With Epic</button>
+      <div class="text-center">
+        <h1 class="text-3xl font-bold mb-4">MyHealth App</h1>
+        <h2 class="text-xl mb-6">Click the Sign In button to login with Epic to get started!</h2>
+        <button on:click={initiateAuthorizationRequest} class="p-3 bg-black rounded-md text-white">Sign In</button>
       </div>
     {/if}
   {/if}
